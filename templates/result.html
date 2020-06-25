@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Search Result
+{% endblock %}
+{% block main %}
+    {% if books %}
+        <table>
+            <thead>
+                <tr>
+                    <td>ISBN</td>
+                    <td>Title</td>
+                    <td>Author</td>
+                </tr>
+            </thead>
+            <tbody>
+                {% for book in books %}
+                    <tr>
+                        <td>{{book[0]}}</td>
+                        <td>{{book[1]}}</td>
+                        <td><a href="/book/{{book[2]}}">{{book[2]}}</a></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <h1>No results</h1>
+    {% endif %}
+{% endblock %}

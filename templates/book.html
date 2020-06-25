@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    {{title}}
+{% endblock %}
+{% block main %}
+    <table>
+        <thead>
+            <tr>
+                <td>ISBN</td>
+                <td>Title</td>
+                <td>Author</td>
+                <td>Year</td>
+            </tr>
+        </thead>
+        <tbody>
+            {% for book in books %}
+                <tr>
+                    <td>{{isbn}}</td>
+                    <td>{{title}}</td>
+                    <td>{{author}}</td>
+                    <td>{{year}}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if reviews %}
+        <table>
+            <thead>
+                <tr>
+                    <td>Username</td>
+                    <td>Score</td>
+                    <td>Review</td>
+                </tr>
+            </thead>
+            <tbody>
+                {% for review in reviews %}
+                    <tr>
+                        <td>{{review[1]}}</td>
+                        <td>{{review[3]}}</td>
+                        <td>{{review[4]}}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+    {% if not userReviews %}
+        <form action="/book" method="post">
+            <div class="form-group">
+                <input name="score" type="number" min="1" max="5" class="form-control">
+            </div>
+            <div class="form-group">
+                <textarea name="newReview" placeholder="Write Review" id="newReview" cols="30" rows="30" maxlength="999"></textarea>
+            </div>
+            <button class="btn btn-primary" type="submit">Register</button>
+        </form>
+    {% else %}
+        <p>You already submitted a review for this book</p>
+    {% endif %}
+{% endblock %}

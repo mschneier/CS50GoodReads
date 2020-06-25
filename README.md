@@ -1,2 +1,3 @@
-# CS50GoodReads
-CS50 Project 1 Good Reads
+# Project 1
+
+Web Programming with Python and JavaScript
