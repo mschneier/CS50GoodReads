@@ -57,8 +57,8 @@ class Review(sql.Model):
 
     __tablename__ = "reviews"
     id = sql.Column(sql.Integer, primary_key=True)
-    user = sql.Column(sql.Integer, sql.ForeignKey("users.id"), nullable=False)
-    book = sql.Column(sql.Integer, sql.ForeignKey("books.id"), nullable=False)
+    user = sql.Column(sql.Integer, nullable=False)
+    book = sql.Column(sql.Integer, nullable=False)
     score = sql.Column(sql.Integer, nullable=False)
     review = sql.Column(sql.String(999), nullable=False)
 

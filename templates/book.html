@@ -14,14 +14,12 @@
             </tr>
         </thead>
         <tbody>
-            {% for book in books %}
-                <tr>
-                    <td>{{isbn}}</td>
-                    <td>{{title}}</td>
-                    <td>{{author}}</td>
-                    <td>{{year}}</td>
-                </tr>
-            {% endfor %}
+            <tr>
+                <td>{{isbn}}</td>
+                <td>{{title}}</td>
+                <td>{{author}}</td>
+                <td>{{year}}</td>
+            </tr>
         </tbody>
     </table>
     {% if reviews %}
@@ -44,15 +42,16 @@
             </tbody>
         </table>
     {% endif %}
+    <br>
     {% if not userReviews %}
-        <form action="/book" method="post">
+        <form action="/book/{{isbn}}" method="post">
             <div class="form-group">
-                <input name="score" type="number" min="1" max="5" class="form-control">
+                <input name="score" id="score" type="number" min="1" max="5" class="form-control">
             </div>
             <div class="form-group">
                 <textarea name="newReview" placeholder="Write Review" id="newReview" cols="30" rows="30" maxlength="999"></textarea>
             </div>
-            <button class="btn btn-primary" type="submit">Register</button>
+            <button class="btn btn-primary" type="submit">Post</button>
         </form>
     {% else %}
         <p>You already submitted a review for this book</p>

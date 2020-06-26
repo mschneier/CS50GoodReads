@@ -1,15 +1,16 @@
 import os
+import requests
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session
 from flask_session import Session
+from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from models import *
-import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from sqlClasses import Book, User
 from werkzeug.exceptions import default_exceptions, HTTPException, InternalServerError
 from werkzeug.security import check_password_hash, generate_password_hash
+from xmltodict import parse
 
 app = Flask(__name__)
 key = os.getenv("KEY")
@@ -21,7 +22,10 @@ if not os.getenv("DATABASE_URL"):
 # Configure session to use filesystem
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 Session(app)
+SQLAlchemy().init_app(app)
 
 # Set up database
 engine = create_engine(os.getenv("DATABASE_URL"))
@@ -65,16 +69,18 @@ def login():
             flash("Must provide password.")
             return render_template("login.html")
 
-        # Query database for username
-        rows = User.query.filter_by(username=username)
-
-        # Ensure username exists and password is correct
-        if len(rows) != 1 or not check_password_hash(rows[0]["hash"], request.form.get("password")):
+        # Query database for password and id.
+        user = db.execute(
+            "SELECT id, password FROM users WHERE username=:username",
+            {"username": username}
+        ).fetchone()
+        # Ensure password is correct
+        if check_password_hash(user[1], password):
             flash("Invalid username and/or password.")
             return render_template("login.html")
 
         # Remember which user has logged in
-        session["user_id"] = rows[0]["id"]
+        session["user_id"] = user[0]
 
         # Redirect user to home page
         return redirect("/search")
@@ -99,7 +105,7 @@ def register():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        confirmation = request.form.get("confirmtation")
+        confirmation = request.form.get("confirmation")
         # Ensure username was submitted
         if not username:
             flash("Must provide username.")
@@ -111,15 +117,13 @@ def register():
         elif password != confirmation:
             flash("Confirmation must equal password.")
             return render_template("register.html")
-        usernames = User.query.filter_by(username=username)
-        if usernames:
-            flash("Username already taken.")
-            return render_template("register.html")
-        user = User(
-            username=username, password=password
+        db.execute(
+            "INSERT INTO users(username, password) VALUES(:username, :password)",
+            {"username": username, "password": password}
         )
-        sql.session.add(user)
-        return redirect("/")
+        db.commit()
+        flash("You can now login.")
+        return redirect("/login")
     return render_template("register.html")
 
 
@@ -128,21 +132,22 @@ def register():
 def search():
     """Register user"""
     if request.method == "POST":
-        isbn = request.form.get("isbn")
+        
+        isbn = request.form.get("isbn") if request.form.get("isbn") else 0
         author = request.form.get("author")
         title = request.form.get("title")
-        searches = 0
-        for search in [isbn, author, title]:
-            if search:
-                searches += 1
-        if not searches:
-            flash("You can only search for one search term.")
-            return render_template("search.html")
-        books = Book.query.filter(
-            Book.isbn.like(f"%{isbn}%"),
-            Book.author.like(f"%{author}%"),
-            Book.title.like(f"%{title}%")
-        ).all()
+        
+        if isbn:
+            books = db.execute(
+                f"""SELECT * FROM books WHERE isbn={isbn}
+                AND author LIKE '%{author}%' and  title LIKE '%{title}%'"""
+            ).fetchall()
+        else:
+            books = db.execute(
+                f"""SELECT * FROM books WHERE author LIKE '%{author}%'
+                AND title LIKE '%{title}%'"""
+            )
+        print(books)
         return render_template(
             "result.html",
             books=books,
@@ -156,21 +161,23 @@ def search():
 @app.route("/api/<int:isbn>/")
 def api(isbn):
     """ISBN API."""
-    isbn = str(isbn)
-    res = requests.get(
-        "https://www.goodreads.com/book/review_counts.json",
-        params={"key": key, "isbns": isbn}
-    ).json()
-    book = Book.query.filter_by(isbn=isbn)
-    if len(book) != 1:
+    book = db.execute(
+        "SELECT * FROM books WHERE isbn=:isbn",
+        {"isbn": isbn}
+    ).fetchone()
+    res = parse(requests.get(
+        f"https://www.goodreads.com/search.xml?key={key}&q={book.title}",
+    ).content)
+    response = res["GoodreadsResponse"]["search"]["results"]["work"][0]
+    if not book:
         return "That isbn doesn't exist", 404
     bookDict = {
         "title": book[2],
         "author": book[3],
         "year": book[4],
         "isbn": book[1],
-        "review_count": res["review_count"],
-        "average_score": res["average_rating"],
+        "review_count": response["ratings_count"]["#text"],
+        "average_score": response["average_rating"],
     }
     return jsonify(bookDict)
 
@@ -180,44 +187,59 @@ def api(isbn):
 def book(isbn):
     """Book details."""
     isbn = str(isbn)
-    userId = User.query.filter_by(username=session["user_id"])[0]
-    book = Book.query.filter_by(isbn=isbn)
+    user = db.execute(
+        "SELECT id, username FROM users WHERE id=:userID",
+        {"userID": session["user_id"]}
+    ).fetchone()
+    book = db.execute(
+        "SELECT * FROM books WHERE isbn=:isbn",
+        {"isbn": isbn}
+    ).fetchone()
     if not book:
         return "That isbn doesn't exist", 404
+    userReviews = db.execute(
+        f"SELECT * FROM reviews WHERE user LIKE '%{user[1]}%'",
+        {"user": user}
+    ).fetchall()
     if request.method == "POST":
-        userReviews = Review.query.filter_by(username=session["user_id"])
         if userReviews:
             flash("You already submitted a review for this book.")
             return redirect("/")
         newReview = request.form.get("newReview")
-        score = request.form.get("score")
-        bookId = Book.query.filter_by(isbn=isbn)[0]
-        review = Review(
-            user=userId,
-            book=bookId,
-            score=score,
-            review=newReview
+        score = int(request.form.get("score"))
+        db.execute(
+            "INSERT INTO reviews(user, book, score, review) VALUES(:user, :book, :score, :review)",
+            {"user": user[0], "book": book, "score": score, "review": newReview}
         )
-        sql.session.add(review)
+        db.commit()
+        flash("You posted a review.")
         return redirect(f"/book/{isbn}")
     isbn = book[1]
     title = book[2]
     author = book[3]
     year = book[4]
-    reviews = Review.query.filter_by(isbn=isbn)
-    userReviews = Review.query.filter_by(user=userId)
-    res = requests.get(
-        "https://www.goodreads.com/book/review_counts.json",
-        params={"key": key, "isbns": isbn}
-    ).json()
+    reviews = db.execute(
+        "SELECT * FROM reviews WHERE book=:book",
+        {"book": book[0]}
+    ).fetchall()
+    modReviews = [list(review) for review in reviews]
+    for review in modReviews:
+        review[1] = db.execute(
+            "SELECT username FROM users WHERE id=:userID",
+            {"userID": review[1]}
+        ).fetchone()[0]
+    res = parse(requests.get(
+        f"https://www.goodreads.com/search.xml?key={key}&q={book.title}",
+    ).content)
+    response = res["GoodreadsResponse"]["search"]["results"]["work"][0]
     return render_template(
         "book.html",
         isbn=isbn,
         title=title,
         author=author,
         year=year,
-        reviews=reviews,
+        reviews=modReviews,
         userReviews=userReviews,
-        reviewCount=res["review_count"],
-        averageScore=res["average_rating"],
+        reviewCount=response["ratings_count"]["#text"],
+        averageScore=response["average_rating"],
     )
